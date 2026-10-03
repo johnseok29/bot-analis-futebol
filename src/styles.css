@@ -1,0 +1,202 @@
+import { useEffect, useMemo, useState } from 'react';
+
+const dayOffsets = [
+  { value: -1, label: 'Ontem' },
+  { value: 0, label: 'Hoje' },
+  { value: 1, label: 'Amanhã' },
+];
+
+function formatDate(dateValue) {
+  const date = new Date(dateValue);
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+
+function statusBadge(match) {
+  if (match.state === 'in') return 'AO VIVO';
+  if (match.state === 'post') return 'FINAL';
+  return 'PREVIEW';
+}
+
+function App() {
+  const [offset, setOffset] = useState(0);
+  const [matches, setMatches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [error, setError] = useState('');
+
+  const selectedDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().slice(0, 10);
+  }, [offset]);
+
+  async function fetchMatches() {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/fixtures?date=${selectedDate}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Erro ao carregar partidas');
+      setMatches(data.matches || []);
+    } catch (err) {
+      setError(err.message || 'Falha ao buscar partidas');
+      setMatches([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchMatches();
+  }, [selectedDate]);
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand-wrap">
+          <div className="brand-icon">📈</div>
+          <div>
+            <div className="brand-line">BOT ANALIS</div>
+            <div className="brand-sub">Futebol · Dados reais + análise</div>
+          </div>
+        </div>
+
+        <div className="filters">
+          {dayOffsets.map((item) => (
+            <button
+              key={item.value}
+              className={offset === item.value ? 'filter active' : 'filter'}
+              onClick={() => setOffset(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <main className="content">
+        <section className="summary-panel">
+          <div>
+            <div className="eyebrow">DATA</div>
+            <h2>{formatDate(selectedDate)}</h2>
+          </div>
+          <div>
+            <div className="eyebrow">PARTIDAS</div>
+            <h2>{matches.length}</h2>
+          </div>
+          <div>
+            <div className="eyebrow">AO VIVO</div>
+            <h2>{matches.filter((m) => m.state === 'in').length}</h2>
+          </div>
+        </section>
+
+        {error && <div className="error-banner">{error}</div>}
+
+        {loading ? (
+          <div className="loading-box">Carregando jogos…</div>
+        ) : (
+          <div className="match-grid">
+            {matches.length === 0 ? (
+              <div className="empty-box">Nenhuma partida encontrada para esta data.</div>
+            ) : (
+              matches.map((match) => (
+                <article key={match.id} className="match-card">
+                  <div className="match-topline">
+                    <span className="league-name">{match.leagueName}</span>
+                    <span className={`status ${match.state}`}>{statusBadge(match)}</span>
+                  </div>
+
+                  <div className="match-body">
+                    <div className="team side-left">
+                      <span className="flag">{match.homeFlag || '🏟️'}</span>
+                      <div>
+                        <div className="team-name">{match.home}</div>
+                        <div className="team-meta">{match.homeAbbr}</div>
+                      </div>
+                    </div>
+
+                    <div className="score-box">
+                      {match.scoreHome !== null && match.scoreAway !== null ? (
+                        <strong>{match.scoreHome} - {match.scoreAway}</strong>
+                      ) : (
+                        <span>{match.time}</span>
+                      )}
+                    </div>
+
+                    <div className="team side-right">
+                      <div>
+                        <div className="team-name">{match.away}</div>
+                        <div className="team-meta">{match.awayAbbr}</div>
+                      </div>
+                      <span className="flag">{match.awayFlag || '🏟️'}</span>
+                    </div>
+                  </div>
+
+                  <div className="match-footer">
+                    <div className="market-box">
+                      <span className="label">Mercado</span>
+                      <strong>{match.market}</strong>
+                    </div>
+                    <div className="market-box highlight">
+                      <span className="label">Probabilidade</span>
+                      <strong>{match.probability}%</strong>
+                    </div>
+                    <button className="cta" onClick={() => setSelected(match)}>
+                      Ver análise
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        )}
+      </main>
+
+      {selected && (
+        <div className="modal-backdrop" onClick={() => setSelected(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <div className="eyebrow">ANÁLISE DETALHADA</div>
+                <h3>{selected.home} vs {selected.away}</h3>
+              </div>
+              <button className="close-btn" onClick={() => setSelected(null)}>×</button>
+            </div>
+
+            <div className="detail-grid">
+              <div className="detail-box">
+                <span className="label">Mercado principal</span>
+                <strong>{selected.market}</strong>
+              </div>
+              <div className="detail-box">
+                <span className="label">Odd</span>
+                <strong>{selected.odd}</strong>
+              </div>
+              <div className="detail-box">
+                <span className="label">Probabilidade</span>
+                <strong>{selected.probability}%</strong>
+              </div>
+              <div className="detail-box">
+                <span className="label">Pressão</span>
+                <strong>{selected.pressure}</strong>
+              </div>
+            </div>
+
+            <div className="reason-box">
+              <h4>Por que esse mercado?</h4>
+              <p>{selected.reason}</p>
+            </div>
+
+            <ul className="analysis-list">
+              {(selected.analysis || []).map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
